@@ -11,6 +11,13 @@ import About from "./pages/About";
 import Contact from "./pages/Contact";
 import NotFound from "./pages/NotFound";
 
+// Admin pages
+import AdminLogin from "./pages/admin/Login";
+import AdminDashboard from "./pages/admin/Dashboard";
+import PostsList from "./pages/admin/PostsList";
+import PostEditor from "./pages/admin/PostEditor";
+import AdminNotFound from "./pages/admin/NotFound";
+
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -20,12 +27,22 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Routes>
+          {/* Main website routes */}
           <Route path="/" element={<Index />} />
           <Route path="/services" element={<Services />} />
           <Route path="/blog" element={<Blog />} />
           <Route path="/about" element={<About />} />
           <Route path="/contact" element={<Contact />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+          
+          {/* Admin routes */}
+          <Route path="/admin/login" element={<AdminLogin />} />
+          <Route path="/admin/dashboard" element={<AdminDashboard />} />
+          <Route path="/admin/posts" element={<PostsList />} />
+          <Route path="/admin/posts/new" element={<PostEditor />} />
+          <Route path="/admin/posts/edit/:id" element={<PostEditor />} />
+          <Route path="/admin/*" element={<AdminNotFound />} />
+          
+          {/* Catch-all route */}
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
