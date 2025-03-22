@@ -15,82 +15,56 @@ import { Edit, FileText, PlusCircle, Trash2 } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { Badge } from "@/components/ui/badge";
-
-// Mock blog post data - in a real app, this would come from the backend
-const mockPosts = [
-  {
-    id: "1",
-    title: "Top 7 AC Maintenance Tips for Dubai Summer",
-    status: "published",
-    author: "Ahmed Hassan",
-    date: "2023-06-15",
-    views: 245
-  },
-  {
-    id: "2",
-    title: "Energy-Efficient Cooling: The Future of AC Technology",
-    status: "published",
-    author: "Sophia White",
-    date: "2023-05-22",
-    views: 187
-  },
-  {
-    id: "3",
-    title: "Why Regular AC Servicing Is Essential for Luxury Properties",
-    status: "published",
-    author: "Omar Farooq",
-    date: "2023-04-10",
-    views: 124
-  },
-  {
-    id: "4",
-    title: "Understanding AC SEER Ratings for Dubai's Climate",
-    status: "draft",
-    author: "Ahmed Hassan",
-    date: "2023-07-04",
-    views: 0
-  },
-  {
-    id: "5",
-    title: "The Impact of Proper AC Installation on Energy Bills",
-    status: "draft",
-    author: "Sophia White",
-    date: "2023-07-01",
-    views: 0
-  }
-];
+import { Post, deletePost, getPosts } from "@/lib/supabase";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 const PostsList = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [posts, setPosts] = useState(mockPosts);
+  const queryClient = useQueryClient();
   const [postToDelete, setPostToDelete] = useState<string | null>(null);
   
-  // Check if user is authenticated
-  useEffect(() => {
-    const authStatus = localStorage.getItem("isAdminAuthenticated");
-    if (authStatus !== "true") {
-      navigate("/admin/login");
-    }
-  }, [navigate]);
+  // Fetch posts using react-query
+  const { data: posts, isLoading, error } = useQuery({
+    queryKey: ['posts'],
+    queryFn: getPosts
+  });
 
   // Handle post deletion
-  const handleDeletePost = () => {
+  const handleDeletePost = async () => {
     if (postToDelete) {
-      // Filter out the deleted post
-      const updatedPosts = posts.filter(post => post.id !== postToDelete);
-      setPosts(updatedPosts);
-      
-      // Show success toast
-      toast({
-        title: "Post deleted",
-        description: "The blog post has been successfully deleted",
-      });
-      
-      // Reset postToDelete
-      setPostToDelete(null);
+      try {
+        await deletePost(postToDelete);
+        
+        // Invalidate the posts query to refresh the data
+        queryClient.invalidateQueries({ queryKey: ['posts'] });
+        
+        // Show success toast
+        toast({
+          title: "Post deleted",
+          description: "The blog post has been successfully deleted",
+        });
+        
+        // Reset postToDelete
+        setPostToDelete(null);
+      } catch (error) {
+        console.error('Error deleting post:', error);
+        toast({
+          title: "Error",
+          description: "Failed to delete the post. Please try again.",
+          variant: "destructive",
+        });
+      }
     }
   };
+
+  if (error) {
+    toast({
+      title: "Error",
+      description: "Failed to load posts. Please try again.",
+      variant: "destructive",
+    });
+  }
 
   return (
     <AdminLayout>
@@ -103,88 +77,102 @@ const PostsList = () => {
           </Button>
         </div>
         
-        <div className="bg-white rounded-md shadow-sm">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Title</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Author</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Views</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {posts.map((post) => (
-                <TableRow key={post.id}>
-                  <TableCell className="font-medium">{post.title}</TableCell>
-                  <TableCell>
-                    <Badge 
-                      variant={post.status === "published" ? "default" : "secondary"}
-                    >
-                      {post.status === "published" ? "Published" : "Draft"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{post.author}</TableCell>
-                  <TableCell>{new Date(post.date).toLocaleDateString()}</TableCell>
-                  <TableCell>{post.views}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button 
-                        variant="ghost" 
-                        size="icon"
-                        onClick={() => navigate(`/admin/posts/edit/${post.id}`)}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      
-                      <Button 
-                        variant="ghost" 
-                        size="icon"
-                        onClick={() => navigate(`/blog/${post.id}`)}
-                      >
-                        <FileText className="h-4 w-4" />
-                      </Button>
-                      
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
+        {isLoading ? (
+          <div className="flex justify-center my-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+          </div>
+        ) : (
+          <div className="bg-white rounded-md shadow-sm">
+            {posts && posts.length > 0 ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Title</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Author</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {posts.map((post) => (
+                    <TableRow key={post.id}>
+                      <TableCell className="font-medium">{post.title}</TableCell>
+                      <TableCell>
+                        <Badge 
+                          variant={post.status === "published" ? "default" : "secondary"}
+                        >
+                          {post.status === "published" ? "Published" : "Draft"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{post.author}</TableCell>
+                      <TableCell>{new Date(post.created_at).toLocaleDateString()}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
                           <Button 
                             variant="ghost" 
                             size="icon"
-                            onClick={() => setPostToDelete(post.id)}
+                            onClick={() => navigate(`/admin/posts/edit/${post.id}`)}
                           >
-                            <Trash2 className="h-4 w-4 text-destructive" />
+                            <Edit className="h-4 w-4" />
                           </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              This action cannot be undone. This will permanently delete the blog post
-                              and remove it from our servers.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel onClick={() => setPostToDelete(null)}>
-                              Cancel
-                            </AlertDialogCancel>
-                            <AlertDialogAction 
-                              onClick={handleDeletePost} 
-                              className="bg-destructive text-destructive-foreground"
-                            >
-                              Delete
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+                          
+                          <Button 
+                            variant="ghost" 
+                            size="icon"
+                            onClick={() => navigate(`/blog/${post.id}`)}
+                          >
+                            <FileText className="h-4 w-4" />
+                          </Button>
+                          
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button 
+                                variant="ghost" 
+                                size="icon"
+                                onClick={() => setPostToDelete(post.id)}
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This action cannot be undone. This will permanently delete the blog post
+                                  and remove it from our servers.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel onClick={() => setPostToDelete(null)}>
+                                  Cancel
+                                </AlertDialogCancel>
+                                <AlertDialogAction 
+                                  onClick={handleDeletePost} 
+                                  className="bg-destructive text-destructive-foreground"
+                                >
+                                  Delete
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : (
+              <div className="p-8 text-center">
+                <p className="text-muted-foreground mb-4">No posts found. Create your first post!</p>
+                <Button onClick={() => navigate("/admin/posts/new")}>
+                  <PlusCircle className="mr-2 h-4 w-4" />
+                  Create Post
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </AdminLayout>
   );

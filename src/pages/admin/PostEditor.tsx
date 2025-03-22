@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { z } from "zod";
@@ -19,6 +18,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/components/ui/use-toast";
 import AdminLayout from "@/components/admin/AdminLayout";
 import { Check, ChevronLeft, Save } from "lucide-react";
+import { Post, createPost, getPostById, updatePost } from "@/lib/supabase";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 // Form schema for validation
 const formSchema = z.object({
@@ -26,11 +27,11 @@ const formSchema = z.object({
   content: z.string().min(50, { message: "Content must be at least 50 characters" }),
   excerpt: z.string().min(10, { message: "Excerpt must be at least 10 characters" }),
   author: z.string().min(1, { message: "Author is required" }),
-  metaTitle: z.string().optional(),
-  metaDescription: z.string().optional(),
+  meta_title: z.string().optional(),
+  meta_description: z.string().optional(),
   tags: z.string().optional(),
   status: z.enum(["published", "draft"]),
-  isFeatured: z.boolean().default(false),
+  is_featured: z.boolean().default(false),
 });
 
 // Sample author list
@@ -40,29 +41,12 @@ const authors = [
   { value: "Omar Farooq", label: "Omar Farooq" },
 ];
 
-// Mock blog post data
-const mockPosts = [
-  {
-    id: "1",
-    title: "Top 7 AC Maintenance Tips for Dubai Summer",
-    content: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed euismod, nisl vel tincidunt lacinia, nisl nisl aliquam nisl, eget aliquam nisl nisl sit amet nisl. Sed euismod, nisl vel tincidunt lacinia, nisl nisl aliquam nisl, eget aliquam nisl nisl sit amet nisl. Sed euismod, nisl vel tincidunt lacinia, nisl nisl aliquam nisl, eget aliquam nisl nisl sit amet nisl. Sed euismod, nisl vel tincidunt lacinia, nisl nisl aliquam nisl, eget aliquam nisl nisl sit amet nisl. Sed euismod, nisl vel tincidunt lacinia, nisl nisl aliquam nisl, eget aliquam nisl nisl sit amet nisl.",
-    excerpt: "Discover essential maintenance practices to keep your AC running efficiently during Dubai's intense summer heat.",
-    author: "Ahmed Hassan",
-    metaTitle: "AC Maintenance Tips for Dubai Summer | Happy Brother AC",
-    metaDescription: "Learn the top 7 essential maintenance practices to keep your air conditioning running efficiently during Dubai's intense summer heat.",
-    tags: "maintenance, summer, tips, dubai",
-    status: "published",
-    isFeatured: true,
-    date: "2023-06-15",
-  },
-];
-
 const PostEditor = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
-  const [post, setPost] = useState<any>(null);
   const isEditMode = id !== "new" && id !== undefined;
 
   // Initialize form with zod resolver
@@ -73,67 +57,82 @@ const PostEditor = () => {
       content: "",
       excerpt: "",
       author: "",
-      metaTitle: "",
-      metaDescription: "",
+      meta_title: "",
+      meta_description: "",
       tags: "",
       status: "draft",
-      isFeatured: false,
+      is_featured: false,
     },
   });
 
-  // Check if user is authenticated
-  useEffect(() => {
-    const authStatus = localStorage.getItem("isAdminAuthenticated");
-    if (authStatus !== "true") {
-      navigate("/admin/login");
-    }
-  }, [navigate]);
-
   // Fetch post data if in edit mode
-  useEffect(() => {
-    if (isEditMode) {
-      // In a real app, fetch data from API
-      // For now, use mock data
-      const foundPost = mockPosts.find(post => post.id === id);
-      if (foundPost) {
-        setPost(foundPost);
-        // Populate form with post data
-        form.reset({
-          title: foundPost.title,
-          content: foundPost.content,
-          excerpt: foundPost.excerpt,
-          author: foundPost.author,
-          metaTitle: foundPost.metaTitle,
-          metaDescription: foundPost.metaDescription,
-          tags: foundPost.tags,
-          status: foundPost.status as "published" | "draft",
-          isFeatured: foundPost.isFeatured,
-        });
-      } else {
-        // If post not found, redirect to posts list
-        navigate("/admin/posts");
-      }
+  const { data: post, isLoading: isPostLoading } = useQuery({
+    queryKey: ['post', id],
+    queryFn: () => getPostById(id!),
+    enabled: isEditMode,
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: "Failed to load post. Redirecting to posts list.",
+        variant: "destructive",
+      });
+      navigate("/admin/posts");
     }
-  }, [isEditMode, id, navigate, form]);
+  });
 
-  const onSubmit = (values: z.infer<typeof formSchema>) => {
+  // Update form when post data is loaded
+  useEffect(() => {
+    if (isEditMode && post) {
+      form.reset({
+        title: post.title,
+        content: post.content,
+        excerpt: post.excerpt,
+        author: post.author,
+        meta_title: post.meta_title || "",
+        meta_description: post.meta_description || "",
+        tags: post.tags || "",
+        status: post.status,
+        is_featured: post.is_featured,
+      });
+    }
+  }, [isEditMode, post, form]);
+
+  const onSubmit = async (values: z.infer<typeof formSchema>) => {
     setLoading(true);
     
-    // Simulate API call
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      if (isEditMode && id) {
+        // Update existing post
+        await updatePost(id, values);
+        toast({
+          title: "Post updated",
+          description: "Your blog post has been successfully updated",
+        });
+      } else {
+        // Create new post
+        await createPost(values);
+        toast({
+          title: "Post created",
+          description: "Your blog post has been successfully created",
+        });
+      }
       
-      // Show success toast
-      toast({
-        title: isEditMode ? "Post updated" : "Post created",
-        description: isEditMode 
-          ? "Your blog post has been successfully updated"
-          : "Your blog post has been successfully created",
-      });
+      // Invalidate posts query to refresh data
+      queryClient.invalidateQueries({ queryKey: ['posts'] });
+      queryClient.invalidateQueries({ queryKey: ['publishedPosts'] });
       
       // Redirect to posts list
       navigate("/admin/posts");
-    }, 1000);
+    } catch (error) {
+      console.error('Error saving post:', error);
+      toast({
+        title: "Error",
+        description: "Failed to save the post. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -175,153 +174,24 @@ const PostEditor = () => {
           </div>
         </div>
         
-        <div className="bg-white rounded-md shadow-sm p-6">
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-6">
-                  <FormField
-                    control={form.control}
-                    name="title"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Post Title</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Enter post title" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  
-                  <FormField
-                    control={form.control}
-                    name="excerpt"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Excerpt</FormLabel>
-                        <FormControl>
-                          <Textarea 
-                            placeholder="Brief summary of the post" 
-                            {...field} 
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          A short description that appears in blog listings (150-200 characters)
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  
-                  <FormField
-                    control={form.control}
-                    name="author"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Author</FormLabel>
-                        <Select 
-                          onValueChange={field.onChange} 
-                          defaultValue={field.value}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select an author" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {authors.map((author) => (
-                              <SelectItem key={author.value} value={author.value}>
-                                {author.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  
-                  <FormField
-                    control={form.control}
-                    name="tags"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Tags</FormLabel>
-                        <FormControl>
-                          <Input 
-                            placeholder="maintenance, summer, tips, dubai" 
-                            {...field} 
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          Comma-separated list of tags (e.g., "maintenance, summer, tips")
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  
-                  <FormField
-                    control={form.control}
-                    name="isFeatured"
-                    render={({ field }) => (
-                      <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
-                        <FormControl>
-                          <Checkbox
-                            checked={field.value}
-                            onCheckedChange={field.onChange}
-                          />
-                        </FormControl>
-                        <div className="space-y-1 leading-none">
-                          <FormLabel>
-                            Featured Post
-                          </FormLabel>
-                          <FormDescription>
-                            This post will be highlighted in featured sections
-                          </FormDescription>
-                        </div>
-                      </FormItem>
-                    )}
-                  />
-                </div>
-                
-                <div className="space-y-6">
-                  <FormField
-                    control={form.control}
-                    name="content"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Post Content</FormLabel>
-                        <FormControl>
-                          <Textarea 
-                            placeholder="Write your post content here..." 
-                            className="min-h-[300px]"
-                            {...field} 
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          In a real implementation, this would be a rich text editor
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  
-                  <div className="p-4 border rounded-md space-y-4">
-                    <h3 className="font-medium">SEO Settings</h3>
-                    
+        {isPostLoading ? (
+          <div className="flex justify-center my-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+          </div>
+        ) : (
+          <div className="bg-white rounded-md shadow-sm p-6">
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-6">
                     <FormField
                       control={form.control}
-                      name="metaTitle"
+                      name="title"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Meta Title</FormLabel>
+                          <FormLabel>Post Title</FormLabel>
                           <FormControl>
-                            <Input 
-                              placeholder="SEO title (appears in search results)" 
-                              {...field} 
-                            />
+                            <Input placeholder="Enter post title" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -330,42 +200,177 @@ const PostEditor = () => {
                     
                     <FormField
                       control={form.control}
-                      name="metaDescription"
+                      name="excerpt"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Meta Description</FormLabel>
+                          <FormLabel>Excerpt</FormLabel>
                           <FormControl>
                             <Textarea 
-                              placeholder="SEO description (appears in search results)" 
+                              placeholder="Brief summary of the post" 
                               {...field} 
                             />
                           </FormControl>
+                          <FormDescription>
+                            A short description that appears in blog listings (150-200 characters)
+                          </FormDescription>
                           <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    
+                    <FormField
+                      control={form.control}
+                      name="author"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Author</FormLabel>
+                          <Select 
+                            onValueChange={field.onChange} 
+                            defaultValue={field.value}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select an author" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {authors.map((author) => (
+                                <SelectItem key={author.value} value={author.value}>
+                                  {author.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    
+                    <FormField
+                      control={form.control}
+                      name="tags"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Tags</FormLabel>
+                          <FormControl>
+                            <Input 
+                              placeholder="maintenance, summer, tips, dubai" 
+                              {...field} 
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            Comma-separated list of tags (e.g., "maintenance, summer, tips")
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    
+                    <FormField
+                      control={form.control}
+                      name="is_featured"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+                          <FormControl>
+                            <Checkbox
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                            />
+                          </FormControl>
+                          <div className="space-y-1 leading-none">
+                            <FormLabel>
+                              Featured Post
+                            </FormLabel>
+                            <FormDescription>
+                              This post will be highlighted in featured sections
+                            </FormDescription>
+                          </div>
                         </FormItem>
                       )}
                     />
                   </div>
+                  
+                  <div className="space-y-6">
+                    <FormField
+                      control={form.control}
+                      name="content"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Post Content</FormLabel>
+                          <FormControl>
+                            <Textarea 
+                              placeholder="Write your post content here..." 
+                              className="min-h-[300px]"
+                              {...field} 
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            In a real implementation, this would be a rich text editor
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    
+                    <div className="p-4 border rounded-md space-y-4">
+                      <h3 className="font-medium">SEO Settings</h3>
+                      
+                      <FormField
+                        control={form.control}
+                        name="meta_title"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Meta Title</FormLabel>
+                            <FormControl>
+                              <Input 
+                                placeholder="SEO title (appears in search results)" 
+                                {...field} 
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      
+                      <FormField
+                        control={form.control}
+                        name="meta_description"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Meta Description</FormLabel>
+                            <FormControl>
+                              <Textarea 
+                                placeholder="SEO description (appears in search results)" 
+                                {...field} 
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </div>
                 </div>
-              </div>
-              
-              <div className="flex justify-end gap-3">
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  onClick={() => navigate("/admin/posts")}
-                >
-                  Cancel
-                </Button>
-                <Button 
-                  type="submit" 
-                  disabled={loading}
-                >
-                  {loading ? "Saving..." : "Save Changes"}
-                </Button>
-              </div>
-            </form>
-          </Form>
-        </div>
+                
+                <div className="flex justify-end gap-3">
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    onClick={() => navigate("/admin/posts")}
+                  >
+                    Cancel
+                  </Button>
+                  <Button 
+                    type="submit" 
+                    disabled={loading}
+                  >
+                    {loading ? "Saving..." : "Save Changes"}
+                  </Button>
+                </div>
+              </form>
+            </Form>
+          </div>
+        )}
       </div>
     </AdminLayout>
   );

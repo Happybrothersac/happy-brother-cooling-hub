@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AirVent, AlertCircle } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
+import { signIn } from "@/lib/supabase";
 
 // Form schema for validation
 const formSchema = z.object({
@@ -22,6 +23,7 @@ const AdminLogin = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   
   // Initialize form with zod resolver
   const form = useForm<z.infer<typeof formSchema>>({
@@ -32,15 +34,13 @@ const AdminLogin = () => {
     },
   });
 
-  // Mock admin credentials - in a real app, this would be handled securely in the backend
-  const ADMIN_EMAIL = "admin@happybrotherac.com";
-  const ADMIN_PASSWORD = "admin123";
-
-  const onSubmit = (values: z.infer<typeof formSchema>) => {
-    // Simple mock authentication
-    if (values.email === ADMIN_EMAIL && values.password === ADMIN_PASSWORD) {
-      // Store auth status in localStorage (this is a simplified approach, use a proper auth system in production)
-      localStorage.setItem("isAdminAuthenticated", "true");
+  const onSubmit = async (values: z.infer<typeof formSchema>) => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      // Sign in with Supabase
+      await signIn(values.email, values.password);
       
       // Show success toast
       toast({
@@ -50,8 +50,10 @@ const AdminLogin = () => {
       
       // Redirect to admin dashboard
       navigate("/admin/dashboard");
-    } else {
-      setError("Invalid email or password");
+    } catch (err: any) {
+      setError(err.message || "Invalid email or password");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -105,8 +107,8 @@ const AdminLogin = () => {
                 )}
               />
               
-              <Button type="submit" className="w-full">
-                Sign In
+              <Button type="submit" className="w-full" disabled={isLoading}>
+                {isLoading ? "Signing in..." : "Sign In"}
               </Button>
             </form>
           </Form>

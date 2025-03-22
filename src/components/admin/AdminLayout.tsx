@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useToast } from "@/components/ui/use-toast";
+import { getCurrentUser, signOut } from "@/lib/supabase";
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -23,13 +24,25 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Check if user is authenticated
   useEffect(() => {
-    const authStatus = localStorage.getItem("isAdminAuthenticated");
-    if (authStatus !== "true") {
-      navigate("/admin/login");
-    }
+    const checkAuth = async () => {
+      try {
+        const user = await getCurrentUser();
+        if (!user) {
+          navigate("/admin/login");
+        }
+        setIsLoading(false);
+      } catch (error) {
+        console.error("Auth error:", error);
+        navigate("/admin/login");
+        setIsLoading(false);
+      }
+    };
+    
+    checkAuth();
   }, [navigate]);
 
   const navItems = [
@@ -50,19 +63,35 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
     },
   ];
 
-  const handleLogout = () => {
-    // Clear auth status
-    localStorage.removeItem("isAdminAuthenticated");
-    
-    // Show success toast
-    toast({
-      title: "Logged out",
-      description: "You have been successfully logged out",
-    });
-    
-    // Redirect to login
-    navigate("/admin/login");
+  const handleLogout = async () => {
+    try {
+      await signOut();
+      
+      // Show success toast
+      toast({
+        title: "Logged out",
+        description: "You have been successfully logged out",
+      });
+      
+      // Redirect to login
+      navigate("/admin/login");
+    } catch (error) {
+      console.error("Logout error:", error);
+      toast({
+        title: "Error",
+        description: "Failed to log out. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
